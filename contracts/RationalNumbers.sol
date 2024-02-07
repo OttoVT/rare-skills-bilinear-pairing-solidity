@@ -171,6 +171,15 @@ contract RationalNumbers {
         require(success, "pairing-mul-failed");
     }
 
+      function negate(G1Point memory p) internal pure returns (G1Point memory) {
+            // The prime q in the base field F_q for G1
+            if (p.x == 0 && p.y == 0) {
+            return G1Point(0, 0);
+            } else {
+            return G1Point(p.x, prime - (p.y % prime));
+            }
+        }
+
     function checkPairings(G1Point memory a, 
                           G2Point memory b,
                           G1Point memory c,
@@ -178,34 +187,53 @@ contract RationalNumbers {
                           uint256 x2,
                           uint256 x3) public view returns (bool){
 
-        /* uint256[12] memory points = [
-            a.x,
-            a.y,
-            bG2_x2,
-            bG2_x1,
-            bG2_y2,
-            bG2_y1,
-            cG1_x,
-            cG1_y,
-            dG2_x2,
-            dG2_x1,
-            dG2_y2,
-            dG2_y1
-        ];
-
-        assembly {
-            let success := staticcall(gas(), 0x08, points, 0x0180, input, 0x20)
-            if success {
-                return(input, 0x20)
-            }
-        }
-        revert("Wrong pairing");
-        */
-        return true;
-    }
-
-    // Bilinear pairing check
-    function run(uint256[12] memory input) public view returns (bool) {
+        G1Point memory x1G1 = scalar_mul(G1, x1);
+        G1Point memory x2G1 = scalar_mul(G1, x2);
+        G1Point memory x3G1 = scalar_mul(G1, x3);
+        G1Point memory X = add(add(x1G1, x2G1), x3G1);
         
+        return pairing(negate(a), b, alpha_1, beta_2, X, gama_2, c, delta_2);
     }
+
+      function pairing(
+            G1Point memory a1,
+            G2Point memory a2,
+            G1Point memory b1,
+            G2Point memory b2,
+            G1Point memory c1,
+            G2Point memory c2,
+            G1Point memory d1,
+            G2Point memory d2
+        ) internal view returns (bool) {
+            G1Point[4] memory p1 = [a1, b1, c1, d1];
+            G2Point[4] memory p2 = [a2, b2, c2, d2];
+
+            uint256 inputSize = 24;
+            uint256[] memory input = new uint256[](inputSize);
+
+            for (uint256 i = 0; i < 4; i++) {
+                uint256 j = i * 6;
+                input[j + 0] = p1[i].x;
+                input[j + 1] = p1[i].y;
+                input[j + 2] = p2[i].x[0];
+                input[j + 3] = p2[i].x[1];
+                input[j + 4] = p2[i].y[0];
+                input[j + 5] = p2[i].y[1];
+            }
+
+            uint256[1] memory out;
+            bool success;
+
+            // solium-disable-next-line security/no-inline-assembly
+            assembly {
+                success := staticcall(sub(gas(), 2000), 8, add(input, 0x20), mul(inputSize, 0x20), out, 0x20)
+                // Use "invalid" to make gas estimation work
+                switch success case 0 { invalid() }
+            }
+
+            require(success, "pairing-opcode-failed");
+
+            return out[0] != 0;
+        }
 }
+
