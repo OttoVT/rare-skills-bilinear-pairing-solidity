@@ -1,40 +1,8 @@
 // SPDX-License-Identifier: MIT
+import "hardhat/console.sol";
+
 
 pragma solidity ^0.8.15;
-
-/*
-    Implement a solidity contract that verifies the computation for the EC points.
-
-    $$
-    0 = -A_1B_2 +\alpha_1\beta_2 + X_1\gamma_2 + C_1\delta_2\\X_1=x_1G1 + x_2G1 + x_3G1
-    $$
-
-    Pick any (nontrivial) values to generate the points that results a balanced equation.
-
-    Note that x1, x2, x3 are uint256 and the rest are G1 or G2 points.
-
-    You will need to take in the following as arguments to a public function:
-
-    $$
-    A_1, B_2, C_1, x_1,x_2,x_3
-    $$
-
-    Use the ethereum precompiles for addition and multiplication to compute $X$, 
-    then the precompile for pairing to compute the entire equation in one go.
-
-    All other points should be hardcoded into the contract. For example, suppose you want
-
-    $$
-    \alpha_1 = 5G_1\\
-    \beta_2 = 6G_2\\
-    ...
-    $$
-
-    You need to compute those values and write them as constants inside the contract.
-
-    **Tip: make the pairing work with only two sets of points (2 G1 and 2 G2) first for simple examples. 
-    The order for G2 in the precompile is not what you are expecting it to be!**
-*/
 
 contract RationalNumbers {
     struct G1Point {
@@ -51,18 +19,23 @@ contract RationalNumbers {
         21888242871839275222246405745257275088548364400416034343698204186575808495617;
     uint constant prime =
         21888242871839275222246405745257275088696311157297823662689037894645226208583;
+
     G1Point G1;
     G1Point alpha_1;
     G2Point beta_2;
     G2Point gama_2;
     G2Point delta_2;
 
-    constructor() {
+    constructor(
+        G1Point memory _alpha_1, 
+        G2Point memory _beta_2, 
+        G2Point memory _gama_2, 
+        G2Point memory _delta_2) public {
         G1 = G1Point(1, 2);
-        alpha_1 = G1Point(3, 4);
-        beta_2 = G2Point([uint256(5), 6], [uint256(7), 8]);
-        gama_2 = G2Point([uint256(9), 10], [uint256(11), 12]);
-        delta_2 = G2Point([uint256(9), 10], [uint256(11), 12]);
+        alpha_1 = _alpha_1;
+        beta_2 = _beta_2;
+        gama_2 = _gama_2;
+        delta_2 = _delta_2;
     }
 
     function rationalAdd(
@@ -190,10 +163,112 @@ contract RationalNumbers {
         G1Point memory x1G1 = scalar_mul(G1, x1);
         G1Point memory x2G1 = scalar_mul(G1, x2);
         G1Point memory x3G1 = scalar_mul(G1, x3);
-        G1Point memory X = add(add(x1G1, x2G1), x3G1);
-        
-        return pairing(negate(a), b, alpha_1, beta_2, X, gama_2, c, delta_2);
+        G1Point memory X = add(add(x1G1, x2G1), x3G1);        
+        G1Point memory a1_neg = negate(a);
+        //return pairing(negate(a), b, alpha_1, beta_2, X, gama_2, c, delta_2);
+        uint256[24] memory input = [
+            a1_neg.x, a1_neg.y, b.x[0], b.x[1], b.y[0], b.y[1], 
+            alpha_1.x, alpha_1.y, beta_2.x[0], beta_2.x[1], beta_2.y[0], beta_2.y[1], 
+            X.x, X.y, gama_2.x[0], gama_2.x[1], gama_2.y[0], gama_2.y[1], 
+            c.x, c.y, delta_2.x[0], delta_2.x[1], delta_2.y[0], delta_2.y[1]
+        ];
+
+        return run24(input);
     }
+
+    function testPairing12() public view returns (bool){
+        uint256 aG1_x = 3010198690406615200373504922352659861758983907867017329644089018310584441462;
+        uint256 aG1_y = 17861058253836152797273815394432013122766662423622084931972383889279925210507;
+
+        uint256 bG2_x1 = 2725019753478801796453339367788033689375851816420509565303521482350756874229;
+        uint256 bG2_x2 = 7273165102799931111715871471550377909735733521218303035754523677688038059653;
+        uint256 bG2_y1 = 2512659008974376214222774206987427162027254181373325676825515531566330959255;
+        uint256 bG2_y2 = 957874124722006818841961785324909313781880061366718538693995380805373202866;
+
+        uint256 cG1_x = 4503322228978077916651710446042370109107355802721800704639343137502100212473;
+        uint256 cG1_y = 6132642251294427119375180147349983541569387941788025780665104001559216576968;
+
+        uint256 dG2_x1 = 18029695676650738226693292988307914797657423701064905010927197838374790804409;
+        uint256 dG2_x2 = 14583779054894525174450323658765874724019480979794335525732096752006891875705;
+        uint256 dG2_y1 = 2140229616977736810657479771656733941598412651537078903776637920509952744750;
+        uint256 dG2_y2 = 11474861747383700316476719153975578001603231366361248090558603872215261634898;
+
+        uint256[12] memory input = [
+            aG1_x,
+            aG1_y,
+            bG2_x2,
+            bG2_x1,
+            bG2_y2,
+            bG2_y1,
+            cG1_x,
+            cG1_y,
+            dG2_x2,
+            dG2_x1,
+            dG2_y2,
+            dG2_y1
+        ];
+
+        bool x = run12(input);
+        console.log("result:", x);
+        return x;
+    }
+
+       function testPairing24() public view returns (bool){
+        uint256[24] memory input = [
+            uint256(4503322228978077916651710446042370109107355802721800704639343137502100212473),
+            15755600620544848102871225597907291547126923215509797882023933893086009631615,
+            10191129150170504690859455063377241352678147020731325090942140630855943625622,
+            16727484375212017249697795760885267597317766655549468217180521378213906474374,
+            12345624066896925082600651626583520268054356403303305150512393106955803260718,
+            13790151551682513054696583104432356791070435696840691503641536676885931241944,
+            4503322228978077916651710446042370109107355802721800704639343137502100212473,
+            6132642251294427119375180147349983541569387941788025780665104001559216576968,
+            10191129150170504690859455063377241352678147020731325090942140630855943625622,
+            16727484375212017249697795760885267597317766655549468217180521378213906474374,
+            12345624066896925082600651626583520268054356403303305150512393106955803260718,
+            13790151551682513054696583104432356791070435696840691503641536676885931241944,
+            4503322228978077916651710446042370109107355802721800704639343137502100212473,
+            6132642251294427119375180147349983541569387941788025780665104001559216576968,
+            10857046999023057135944570762232829481370756359578518086990519993285655852781,
+            8495653923123431417604973247489272438418190587263600148770280649306958101930,
+            11559732032986387107991004021392285783925812861821192530917403151452391805634,
+            4082367875863433681332203403145435568316851327593401208105741076214120093531,
+            1,
+            21888242871839275222246405745257275088696311157297823662689037894645226208581,
+            10191129150170504690859455063377241352678147020731325090942140630855943625622,
+            16727484375212017249697795760885267597317766655549468217180521378213906474374,
+            12345624066896925082600651626583520268054356403303305150512393106955803260718,
+            13790151551682513054696583104432356791070435696840691503641536676885931241944
+        ];
+
+        bool x = run24(input);
+        console.log("result:", x);
+        return x;
+    }
+
+   function run12(uint256[12] memory input) public view returns (bool) {
+        assembly {
+            let success := staticcall(gas(), 0x08, input, 0x0180, input, 0x20)
+            if success {
+                return(input, 0x20)
+            }
+        }
+        revert("Wrong pairing");
+    }
+
+    function run24(uint256[24] memory input) public view returns (bool) {
+        for (uint i = 0; i < 24; i++) {
+            console.log("", input[i]);
+        }
+        assembly {
+            let success := staticcall(gas(), 0x08, input, 0x300, input, 0x20)
+            if success {
+                return(input, 0x20)
+            }
+        }
+        revert("Wrong pairing");
+    }
+
 
       function pairing(
             G1Point memory a1,
@@ -213,6 +288,8 @@ contract RationalNumbers {
 
             for (uint256 i = 0; i < 4; i++) {
                 uint256 j = i * 6;
+                logG1Point(p1[i]);
+                logG2Point(p2[i]);
                 input[j + 0] = p1[i].x;
                 input[j + 1] = p1[i].y;
                 input[j + 2] = p2[i].x[0];
@@ -234,6 +311,19 @@ contract RationalNumbers {
             require(success, "pairing-opcode-failed");
 
             return out[0] != 0;
+        }
+
+        function logG1Point(G1Point memory p) pure public {
+            console.log("Point.x:", p.x);
+            console.log("Point.y:", p.y);
+        }
+
+        function logG2Point(G2Point memory p) pure public {
+            console.log("Point.x_1:", p.x[0]);
+            console.log("Point.y_1:", p.y[0]);
+
+            console.log("Point.x_2:", p.x[1]);
+            console.log("Point.y_2:", p.y[1]);
         }
 }
 
